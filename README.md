@@ -2,8 +2,8 @@
 
 https://materialize.io/
 
-Scripts I have wrote for setting up and testing Materialize.io on the EC2 instances running Kafka.
-This would create Materialize.io streaming table objects which could be used to incrementally update the materialize views over the payload and make it queryable.
+Script I have wrote for setting up and testing Materialize.io on the EC2 instances running Kafka.
+This would create Materialize.io streaming objects which could be used to incrementally update the materialize views over the payload and make it queryable.
 
 Kafka cluster - 3 instances
 Debezium connector - for postgres/RDS
