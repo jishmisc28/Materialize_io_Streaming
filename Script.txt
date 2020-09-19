@@ -150,7 +150,9 @@ data->'payload'->'after'->'test_id',
 data->'payload'->'after'->'course_id'
 from mview_student_homework_track limit 1
 
-
+-------
+{"payload":{"after":{"id":2.0,"name":"bar"},"before":null,"op":"r","source":{"connector":"postgresql","db":"gaia","lsn":448807350640.0,"name":"lido-staging-core","schema":"public","snapshot":"true","table":"customers","ts_ms":1593203244565.0,"txId":318538.0,"version":"1.2.0.Final","xmin":null},"transaction":null,"ts_ms":1593203244565.0},"schema":{"fields":[{"field":"before","fields":[{"field":"id","optional":false,"type":"int32"},{"field":"name","optional":true,"type":"string"}],"name":"lido_staging_core.public.customers.Value","optional":true,"type":"struct"},{"field":"after","fields":[{"field":"id","optional":false,"type":"int32"},{"field":"name","optional":true,"type":"string"}],"name":"lido_staging_core.public.customers.Value","optional":true,"type":"struct"},{"field":"source","fields":[{"field":"version","optional":false,"type":"string"},{"field":"connector","optional":false,"type":"string"},{"field":"name","optional":false,"type":"string"},{"field":"ts_ms","optional":false,"type":"int64"},{"default":"false","field":"snapshot","name":"io.debezium.data.Enum","optional":true,"parameters":{"allowed":"true,last,false"},"type":"string","version":1.0},{"field":"db","optional":false,"type":"string"},{"field":"schema","optional":false,"type":"string"},{"field":"table","optional":false,"type":"string"},{"field":"txId","optional":true,"type":"int64"},{"field":"lsn","optional":true,"type":"int64"},{"field":"xmin","optional":true,"type":"int64"}],"name":"io.debezium.connector.postgresql.Source","optional":false,"type":"struct"},{"field":"op","optional":false,"type":"string"},{"field":"ts_ms","optional":true,"type":"int64"},{"field":"transaction","fields":[{"field":"id","optional":false,"type":"string"},{"field":"total_order","optional":false,"type":"int64"}
+-----
 
 
 
