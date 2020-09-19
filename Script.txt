@@ -1,0 +1,156 @@
+
+AWS MSK configuration setup
+--------
+auto.create.topics.enable=true
+default.replication.factor=2
+min.insync.replicas=2
+num.io.threads=8
+num.network.threads=5
+num.partitions=10
+num.replica.fetchers=2
+socket.request.max.bytes=209715200
+unclean.leader.election.enable=true
+message.max.bytes=2097152
+
+comp-prod-core.c2dvpjahlety.ap-south-1.rds.amazonaws.com
+
+-----------------------------------
+Clean Slate
+-----------------------------------
+1. >> psql.json
+{
+  "name": "psql-connector",
+  "config": {
+   "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+   "database.hostname": "comp-prod-core.c2dvpjahlety.ap-south-1.rds.amazonaws.com",
+   "database.port": "5432",
+   "database.user": "mastercomp",
+   "database.password": "mastercomp^345",
+   "database.dbname": "gaia",
+   "database.server.name": "comp-prod-core",
+   "table.whitelist": "public.customers,	",
+   "plugin.name": "wal2json_rds_streaming"
+  }
+}
+
+-- delete connector
+curl -X DELETE localhost:8083/connectors/psql-connector-1
+
+-- register new connector
+curl -X POST -H "Accept: application/json" -H "Content-Type: application/json" localhost:8083/connectors -d @psql_prod_master.json
+
+-- list connector
+curl -H "Accept:application/json" localhost:8083/connectors/
+
+-- status connector
+curl GET localhost:8083/connectors/psql-connector-1/status
+
+
+systemctl restart confluent-kafka-connect
+systemctl status confluent-kafka-connect
+
+
+
+2. >> kafka create topic ( don't do if enable is true in kafka configuration)
+kafka_2.12-2.2.1/bin/kafka-topics.sh --create --zookeeper z-3.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181  --replication-factor 2 --partitions 1 --topic comp-prod-core.session.sessions
+
+-- Kafka list topic
+kafka_2.12-2.2.1/bin/kafka-topics.sh --list --zookeeper z-3.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181
+
+-- KAFKA topic count (partition wise)
+kafka-run-class kafka.tools.GetOffsetShell --broker-list b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092 ,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092 --topic comp-prod-core.audit.logged_actions
+	 
+
+-- Kafka delete topic ( optional)
+kafka_2.12-2.2.1/bin/kafka-topics.sh --zookeeper z-3.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181 --delete --topic comp-prod-core-replica.session.sessions
+
+kafka_2.12-2.2.1/bin/kafka-topics.sh --zookeeper z-3.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181,z-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:2181 --delete --topic comp-prod-core.public.cdc
+
+
+-- Kafka prodcuer (for debug purpose only!)
+kafka-console-producer --broker-list 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com' --topic comp-prod-core.schema-changes.customers
+
+3. >> kafka check consumer
+kafka-console-consumer --bootstrap-server b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092 ,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092 --topic comp-prod-core.session.sessions --from-beginning
+
+comp-prod-core.gaia.public.customers
+
+4. >> query postgres (insert data only when required!)  
+ psql postgres://uname:pwd^345@comp-prod-core.c2dvhlety.ap-south-1.rds.amazonaws.com:5432/gaia
+
+insert into public.customers(id,name) values(465755633,'testcompfgg');
+
+
+5. >> start materialize and query materialize
+materialized -w 1
+psql -h localhost -p 6875 materialize
+
+
+CREATE SOURCE source_session_03 FROM KAFKA BROKER 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092' TOPIC 'comp-prod-core.session.sessions' FORMAT BYTES;
+
+CREATE MATERIALIZED VIEW mv_session_03 AS SELECT CAST(data AS jsonb) AS data FROM (SELECT convert_from(data, 'utf8') AS data FROM source_session_03);
+
+>>debezium history snapshot
+https://debezium.io/documentation/reference/tutorial.html
+
+"database.whitelist": "inventory",
+"database.history.kafka.bootstrap.servers": "kafka:9092",  
+"database.history.kafka.topic": "schema-changes.inventory"  
+
+The connector will store the history of the database schemas in Kafka using this broker (the same broker to which you are sending events) and topic name. Upon restart, the connector will recover the schemas of the database that existed at the point in time in the binlog when the connector should begin reading
+
+CREATE SOURCE hist_customer_1 FROM KAFKA BROKER 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com' TOPIC 'comp-prod-core.schema-changes.customers' FORMAT BYTES;
+
+CREATE MATERIALIZED VIEW mv_hist_cust AS SELECT CAST(data AS jsonb) AS data FROM (SELECT convert_from(data, 'utf8') AS data FROM hist_customer_1);
+
+
+comp-prod-core.session.sessions
+comp-prod-core.student_activities.student_homework_content_track
+comp-prod-core.student_activities.student_homework_track
+comp-prod-core.users.users
+
+
+
+drop view mview_student_homework_content_track;
+drop source source_student_homework_content_track;
+drop view mview_users;
+drop source source_users;
+drop view mview_student_homework_track;
+drop source source_student_homework_track;
+
+
+CREATE SOURCE source_student_homework_content_track FROM KAFKA BROKER 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092' TOPIC 'comp-prod-core.student_activities.student_homework_content_track' FORMAT BYTES ENVELOPE UPSERT;
+
+CREATE MATERIALIZED VIEW mview_student_homework_content_track AS SELECT CAST(data AS jsonb) AS data FROM (SELECT convert_from(data, 'utf8') AS data FROM source_student_homework_content_track);
+
+CREATE SOURCE source_users FROM KAFKA BROKER 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092' TOPIC 'comp-prod-core.users.users' FORMAT BYTES ENVELOPE UPSERT;
+
+CREATE MATERIALIZED VIEW mview_users AS SELECT CAST(data AS jsonb) AS data FROM (SELECT convert_from(data, 'utf8') AS data FROM source_users);	
+
+CREATE SOURCE source_student_homework_track FROM KAFKA BROKER 'b-1.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com:9092,b-2.comp-prod-kafka-3.lrf852.c3.kafka.ap-south-1.amazonaws.com' TOPIC 'comp-prod-core.student_activities.student_homework_track' FORMAT BYTES ENVELOPE UPSERT;
+
+CREATE MATERIALIZED VIEW mview_student_homework_track AS SELECT CAST(data AS jsonb) AS data FROM (SELECT convert_from(data, 'utf8') AS data FROM source_student_homework_track);
+
+select count(*) from mview_student_homework_content_track;
+select count(*) from mview_users;
+select count(*) from mview_student_homework_track;
+
+select 
+data->'payload'->'after'->'id',                    
+data->'payload'->'after'->'student_id',            
+data->'payload'->'after'->'assigned_homework_id',  
+data->'payload'->'after'->'is_completed',          
+data->'payload'->'after'->'end_time',              
+data->'payload'->'after'->'streak_end_time',       
+data->'payload'->'after'->'student_unit_track_id', 
+data->'payload'->'after'->'completed_at',          
+data->'payload'->'after'->'created_at',            
+data->'payload'->'after'->'updated_at',            
+data->'payload'->'after'->'test_id',               
+data->'payload'->'after'->'course_id'
+from mview_student_homework_track limit 1
+
+
+
+
+
